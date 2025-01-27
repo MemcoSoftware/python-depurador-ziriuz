@@ -11,6 +11,7 @@ SELECT
     SUM(CASE WHEN resultados.id_campo = 3 THEN CAST(resultados.resultado AS UNSIGNED) ELSE 0 END) AS Cantidad,
     MAX(CASE WHEN resultados.id_campo = 4 THEN CAST(resultados.resultado AS UNSIGNED) END) AS repuesto_valor,
     SUM(CASE WHEN resultados.id_campo = 6 THEN CAST(resultados.resultado AS UNSIGNED) ELSE 0 END) AS repuestos_total,
+    MAX(CASE WHEN resultados.id_campo = 2 THEN repuestos.activo END) AS RepuestoActivo,
     actividades.activo AS actividad_activa,
     actividades.id_visita AS actividad_id_visita,
     actividades.id_protocolo,
@@ -256,6 +257,81 @@ try:
         'Repuesto_Nombre': 'Repuesto'
     })
 
+    # Crear la nueva hoja Repuestos_Instalados_SURA_2024
+    clientes_ids = [64, 65]  # IDs de los clientes requeridos
+    repuestos_sura_df = (
+        df[
+            (df['cliente_id'].isin(clientes_ids)) &  # Filtrar por los clientes especificados
+            (df['orden_fecha_cierre'].astype(str).str.startswith('2024'))  # Convertir a string y filtrar por el año 2024
+        ][[
+            'cliente_id', 'cliente_nombre', 'clase_nombre', 'modelo_nombre', 'marca_nombre',
+            'Repuesto_Nombre', 'RepuestoActivo', 'repuesto_valor'
+        ]]
+        .drop_duplicates()
+        .dropna()
+        .assign(
+            cliente_id=lambda x: x['cliente_id'].astype(int),
+            cliente_nombre=lambda x: x['cliente_nombre'].str.strip().str.upper(),
+            clase_nombre=lambda x: x['clase_nombre'].str.strip().str.upper(),
+            modelo_nombre=lambda x: x['modelo_nombre'].str.strip().str.upper(),
+            marca_nombre=lambda x: x['marca_nombre'].str.strip().str.upper(),
+            Repuesto_Nombre=lambda x: x['Repuesto_Nombre'].str.strip().str.upper(),
+            # Convertir 'Valor' a formato de moneda COP
+            repuesto_valor=lambda x: x['repuesto_valor'].apply(lambda v: f"${v:,.0f} COP" if pd.notnull(v) else None),
+        )
+        .sort_values(by=['cliente_id', 'clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre'])
+    )
+
+    # Renombrar las columnas para que coincidan con los nombres requeridos
+    repuestos_sura_df = repuestos_sura_df.rename(columns={
+        'cliente_id': 'ID CLIENTE',
+        'cliente_nombre': 'CLIENTE',
+        'clase_nombre': 'Clase',
+        'modelo_nombre': 'Modelo',
+        'marca_nombre': 'Marca',
+        'Repuesto_Nombre': 'Repuesto',
+        'RepuestoActivo': 'ACTIVO',
+        'repuesto_valor': 'Valor',
+    })
+
+    # Crear la nueva hoja Repuestos_Instalados_Inactivos_SURA_2024
+    repuestos_inactivos_sura_df = (
+        df[
+            (df['cliente_id'].isin(clientes_ids)) &  # Filtrar por los clientes especificados
+            (df['orden_fecha_cierre'].astype(str).str.startswith('2024')) &  # Convertir a string y filtrar por el año 2024
+            (df['RepuestoActivo'] == 0)  # Filtrar por repuestos inactivos (Activo = 0)
+        ][[
+            'cliente_id', 'cliente_nombre', 'clase_nombre', 'modelo_nombre', 'marca_nombre',
+            'Repuesto_Nombre', 'RepuestoActivo', 'repuesto_valor'
+        ]]
+        .drop_duplicates()
+        .dropna()
+        .assign(
+            cliente_id=lambda x: x['cliente_id'].astype(int),
+            cliente_nombre=lambda x: x['cliente_nombre'].str.strip().str.upper(),
+            clase_nombre=lambda x: x['clase_nombre'].str.strip().str.upper(),
+            modelo_nombre=lambda x: x['modelo_nombre'].str.strip().str.upper(),
+            marca_nombre=lambda x: x['marca_nombre'].str.strip().str.upper(),
+            Repuesto_Nombre=lambda x: x['Repuesto_Nombre'].str.strip().str.upper(),
+            # Convertir 'Valor' a formato de moneda COP
+            repuesto_valor=lambda x: x['repuesto_valor'].apply(lambda v: f"${v:,.0f} COP" if pd.notnull(v) else None),
+        )
+        .sort_values(by=['cliente_id', 'clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre'])
+    )
+
+    # Renombrar las columnas para que coincidan con los nombres requeridos
+    repuestos_inactivos_sura_df = repuestos_inactivos_sura_df.rename(columns={
+        'cliente_id': 'ID CLIENTE',
+        'cliente_nombre': 'CLIENTE',
+        'clase_nombre': 'Clase',
+        'modelo_nombre': 'Modelo',
+        'marca_nombre': 'Marca',
+        'Repuesto_Nombre': 'Repuesto',
+        'RepuestoActivo': 'ACTIVO',
+        'repuesto_valor': 'Valor',
+    })
+
+
     # Generar Código Repuesto
     repuestos_codificados_df['Código Repuesto'] = (
         repuestos_codificados_df['Clase'].str[0].fillna('X') +  # Inicial de Clase
@@ -268,7 +344,7 @@ try:
     salida_excel = 'repuestos_depurados.xlsx'
     with pd.ExcelWriter(salida_excel, engine='openpyxl') as writer:
         # Hoja principal con los resultados de la consulta
-        df.to_excel(writer, sheet_name='Repuestos Instalados', index=False)
+        df.to_excel(writer, sheet_name='RepuestosInstalados', index=False)  # Cambiar nombre
         # Hoja de clases
         clases_df.to_excel(writer, sheet_name='Clases', index=False)
         # Hoja de marcas
@@ -276,7 +352,11 @@ try:
         # Hoja de modelos
         modelos_df.to_excel(writer, sheet_name='Modelos', index=False)
         # Hoja de repuestos codificados
-        repuestos_codificados_df.to_excel(writer, sheet_name='Repuestos_Codificados', index=False)
+        repuestos_codificados_df.to_excel(writer, sheet_name='RepuestosCodif', index=False)  # Cambiar nombre
+        # Exportar la nueva hoja Repuestos_Instalados_SURA_2024
+        repuestos_sura_df.to_excel(writer, sheet_name='InstaladosSURA2024', index=False)  # Cambiar nombre
+        # Exportar la nueva hoja Repuestos_Instalados_Inactivos_SURA_2024
+        repuestos_inactivos_sura_df.to_excel(writer, sheet_name='InactivosSURA2024', index=False)  # Cambiar nombre
 
     print(f"Resultados exportados a {salida_excel}")
 
@@ -286,3 +366,4 @@ try:
 
 except Exception as e:
     print(f"Error al ejecutar la consulta: {e}")
+ 
