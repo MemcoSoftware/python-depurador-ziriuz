@@ -261,10 +261,10 @@ try:
     clientes_ids = [64, 65]  # IDs de los clientes requeridos
     repuestos_sura_df = (
         df[
-            (df['cliente_id'].isin(clientes_ids)) &  # Filtrar por los clientes especificados
+            (df['cliente_nombre'].str.contains(r'\.\.', regex=True, na=False)) &  # Filtrar por los clientes especificados
             (df['orden_fecha_cierre'].astype(str).str.startswith('2024'))  # Convertir a string y filtrar por el año 2024
         ][[
-            'cliente_id', 'cliente_nombre', 'clase_nombre', 'modelo_nombre', 'marca_nombre',
+            'cliente_id', 'cliente_nombre', 'clase_nombre', 'modelo_nombre', 'marca_nombre', 'RepuestoID',
             'Repuesto_Nombre', 'RepuestoActivo', 'repuesto_valor'
         ]]
         .drop_duplicates()
@@ -299,6 +299,7 @@ try:
         'clase_nombre': 'Clase',
         'modelo_nombre': 'Modelo',
         'marca_nombre': 'Marca',
+        'RepuestoID': 'ID Repuesto',
         'Repuesto_Nombre': 'Repuesto',
         'RepuestoActivo': 'ACTIVO',
         'repuesto_valor': 'Valor',
@@ -308,7 +309,7 @@ try:
     # Crear la nueva hoja Repuestos_Instalados_Inactivos_SURA_2024
     repuestos_inactivos_sura_df = (
         df[
-            (df['cliente_id'].isin(clientes_ids)) &  # Filtrar por los clientes especificados
+            (df['cliente_nombre'].str.contains(r'\.\.', regex=True, na=False)) &  # Filtrar por los clientes especificados
             (df['orden_fecha_cierre'].astype(str).str.startswith('2024')) &  # Convertir a string y filtrar por el año 2024
             (df['RepuestoActivo'] == 0)  # Filtrar por repuestos inactivos (Activo = 0)
         ][[
@@ -343,8 +344,6 @@ try:
     })
 
     # Crear la nueva hoja RepDesactivarSURA
-    clientes_ids = [64, 65]  # IDs de los clientes requeridos
-
     # Obtener los repuestos que ya están en InstaladosSURA2024 (Año 2024)
     repuestos_2024 = set(
         repuestos_sura_df[['Clase', 'Modelo', 'Marca', 'Repuesto']].apply(tuple, axis=1)
@@ -353,11 +352,11 @@ try:
     # Filtrar los repuestos que NO están en InstaladosSURA2024 y que tienen otro año distinto a 2024
     rep_desactivar_sura_df = (
         df[
-            (df['cliente_id'].isin(clientes_ids)) &  # Filtrar por los clientes especificados
-            (~df['orden_fecha_cierre'].astype(str).str.startswith('2024'))  # Filtrar por años distintos a 2024
+            (df['cliente_nombre'].str.contains(r'\.\.', regex=True, na=False)) &  # Filtrar clientes con ".." en el nombre
+            (~df['orden_fecha_cierre'].astype(str).str.startswith('2024'))  # Años distintos de 2024
         ][[
             'cliente_id', 'cliente_nombre', 'clase_nombre', 'modelo_nombre', 'marca_nombre',
-            'Repuesto_Nombre', 'RepuestoActivo', 'repuesto_valor'
+            'RepuestoID', 'Repuesto_Nombre', 'RepuestoActivo', 'repuesto_valor'
         ]]
         .drop_duplicates()
         .dropna()
@@ -385,10 +384,12 @@ try:
         'clase_nombre': 'Clase',
         'modelo_nombre': 'Modelo',
         'marca_nombre': 'Marca',
+        'RepuestoID': 'ID Repuesto',  # 🔹 Nueva columna añadida
         'Repuesto_Nombre': 'Repuesto',
         'RepuestoActivo': 'ACTIVO',
         'repuesto_valor': 'Valor'
     })
+
 
     # Generar Código Repuesto
     repuestos_codificados_df['Código Repuesto'] = (
