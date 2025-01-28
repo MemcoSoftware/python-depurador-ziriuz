@@ -279,7 +279,17 @@ try:
             # Convertir 'Valor' a formato de moneda COP
             repuesto_valor=lambda x: x['repuesto_valor'].apply(lambda v: f"${v:,.0f} COP" if pd.notnull(v) else None),
         )
-        .sort_values(by=['cliente_id', 'clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre'])
+    )
+
+    # Generar Código Repuesto con prefijo "S-"
+    repuestos_sura_df = repuestos_sura_df.assign(
+        Código_Repuesto=lambda x: (
+            "S-" +  # Prefijo fijo "S-"
+            x['clase_nombre'].str[0].fillna('X') +  # Inicial de Clase
+            x['modelo_nombre'].str[0].fillna('X') +  # Inicial de Modelo
+            x['marca_nombre'].str[0].fillna('X') +  # Inicial de Marca
+            (x.reset_index().index + 1).astype(str).str.zfill(5)  # Índice consecutivo con 5 dígitos
+        )
     )
 
     # Renombrar las columnas para que coincidan con los nombres requeridos
@@ -292,6 +302,7 @@ try:
         'Repuesto_Nombre': 'Repuesto',
         'RepuestoActivo': 'ACTIVO',
         'repuesto_valor': 'Valor',
+        'Código_Repuesto': 'Código Repuesto'
     })
 
     # Crear la nueva hoja Repuestos_Instalados_Inactivos_SURA_2024
@@ -331,6 +342,53 @@ try:
         'repuesto_valor': 'Valor',
     })
 
+    # Crear la nueva hoja RepDesactivarSURA
+    clientes_ids = [64, 65]  # IDs de los clientes requeridos
+
+    # Obtener los repuestos que ya están en InstaladosSURA2024 (Año 2024)
+    repuestos_2024 = set(
+        repuestos_sura_df[['Clase', 'Modelo', 'Marca', 'Repuesto']].apply(tuple, axis=1)
+    )
+
+    # Filtrar los repuestos que NO están en InstaladosSURA2024 y que tienen otro año distinto a 2024
+    rep_desactivar_sura_df = (
+        df[
+            (df['cliente_id'].isin(clientes_ids)) &  # Filtrar por los clientes especificados
+            (~df['orden_fecha_cierre'].astype(str).str.startswith('2024'))  # Filtrar por años distintos a 2024
+        ][[
+            'cliente_id', 'cliente_nombre', 'clase_nombre', 'modelo_nombre', 'marca_nombre',
+            'Repuesto_Nombre', 'RepuestoActivo', 'repuesto_valor'
+        ]]
+        .drop_duplicates()
+        .dropna()
+        .assign(
+            cliente_id=lambda x: x['cliente_id'].astype(int),
+            cliente_nombre=lambda x: x['cliente_nombre'].str.strip().str.upper(),
+            clase_nombre=lambda x: x['clase_nombre'].str.strip().str.upper(),
+            modelo_nombre=lambda x: x['modelo_nombre'].str.strip().str.upper(),
+            marca_nombre=lambda x: x['marca_nombre'].str.strip().str.upper(),
+            Repuesto_Nombre=lambda x: x['Repuesto_Nombre'].str.strip().str.upper(),
+            # Convertir 'Valor' a formato de moneda COP
+            repuesto_valor=lambda x: x['repuesto_valor'].apply(lambda v: f"${v:,.0f} COP" if pd.notnull(v) else None),
+        )
+    )
+
+    # Eliminar los repuestos que ya existen en InstaladosSURA2024
+    rep_desactivar_sura_df = rep_desactivar_sura_df[
+        ~rep_desactivar_sura_df[['clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre']].apply(tuple, axis=1).isin(repuestos_2024)
+    ]
+
+    # Renombrar las columnas para que coincidan con los nombres requeridos
+    rep_desactivar_sura_df = rep_desactivar_sura_df.rename(columns={
+        'cliente_id': 'ID CLIENTE',
+        'cliente_nombre': 'CLIENTE',
+        'clase_nombre': 'Clase',
+        'modelo_nombre': 'Modelo',
+        'marca_nombre': 'Marca',
+        'Repuesto_Nombre': 'Repuesto',
+        'RepuestoActivo': 'ACTIVO',
+        'repuesto_valor': 'Valor'
+    })
 
     # Generar Código Repuesto
     repuestos_codificados_df['Código Repuesto'] = (
@@ -357,6 +415,9 @@ try:
         repuestos_sura_df.to_excel(writer, sheet_name='InstaladosSURA2024', index=False)  # Cambiar nombre
         # Exportar la nueva hoja Repuestos_Instalados_Inactivos_SURA_2024
         repuestos_inactivos_sura_df.to_excel(writer, sheet_name='InactivosSURA2024', index=False)  # Cambiar nombre
+        #Exportar la nueva hoja RepDesactivarSURA
+        rep_desactivar_sura_df.to_excel(writer, sheet_name='RepDesactivarSURA', index=False)  # Nueva hoja agregada
+
 
     print(f"Resultados exportados a {salida_excel}")
 
