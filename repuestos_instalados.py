@@ -1,6 +1,10 @@
+import difflib
+import re
+import unicodedata
 from db import get_db_connection
 import pandas as pd
-
+from openpyxl.styles import PatternFill
+from rapidfuzz import fuzz
 # Consulta SQL
 query = """
 SELECT 
@@ -259,6 +263,21 @@ FROM (
 LEFT JOIN repuestos r ON a.RepuestoID = r.id;
 """
 
+
+# Función para limpieza extrema de texto usando unicodedata y expresiones regulares
+def clean_text_extreme(text):
+    if pd.isna(text):
+        return text
+    # Normalizar caracteres Unicode y eliminar tildes/acentos
+    text = unicodedata.normalize('NFKD', str(text)).encode('ASCII', 'ignore').decode('ASCII')
+    # Eliminar puntuación y caracteres especiales
+    text = re.sub(r'[^\w\s]', '', text)
+    # Reemplazar múltiples espacios por uno solo y quitar espacios extremos
+    text = ' '.join(text.split())
+    # Convertir a mayúsculas
+    return text.strip().upper()
+
+
 try:
     # Obtener la conexión
     connection = get_db_connection()
@@ -275,63 +294,79 @@ try:
     columnas = [desc[0] for desc in cursor.description]
     df = pd.DataFrame(resultados, columns=columnas)
 
-    # Depuración de clases
+    # Valores no deseados
+    unwanted_values = ['.', 'N/T', 'N/A', 'NR', 'NA', 'N.A', 'N/R', 'N-A', '', ' ', 'NO APLICA', 'NO REGISTRA', 'NO POSEE']
+    
+    # Depuración de Clases
     clases_df = (
         df[['clase_nombre']]
-        .drop_duplicates()  # Eliminar duplicados
-        .dropna()  # Eliminar valores nulos
-        .assign(clase_nombre=lambda x: x['clase_nombre'].str.strip().str.upper())  # Quitar espacios y convertir a mayúsculas
-        .sort_values(by='clase_nombre')  # Ordenar alfabéticamente
+        .assign(clase_nombre=lambda x: x['clase_nombre'].apply(clean_text_extreme))
+        .replace({'clase_nombre': {v: 'POR RELACIONAR' for v in unwanted_values}})
+        .dropna()
+        .drop_duplicates(subset=['clase_nombre'])
+        .sort_values(by='clase_nombre')
+        .rename(columns={'clase_nombre': 'Clase'})
     )
-    clases_df = clases_df.rename(columns={'clase_nombre': 'Clase'})
 
-    # Depuración de marcas
+    # Depuración de Marcas
     marcas_df = (
         df[['marca_nombre']]
-        .drop_duplicates()
+        .assign(marca_nombre=lambda x: x['marca_nombre'].apply(clean_text_extreme))
+        .replace({'marca_nombre': {v: 'POR RELACIONAR' for v in unwanted_values}})
         .dropna()
-        .assign(marca_nombre=lambda x: x['marca_nombre'].str.strip().str.upper())
+        .drop_duplicates(subset=['marca_nombre'])
         .sort_values(by='marca_nombre')
+        .rename(columns={'marca_nombre': 'Marca'})
     )
-    marcas_df = marcas_df.rename(columns={'marca_nombre': 'Marca'})
 
-    # Depuración de modelos
+    # Depuración de Modelos
     modelos_df = (
         df[['clase_nombre', 'modelo_nombre', 'marca_nombre']]
-        .drop_duplicates()
-        .dropna(subset=['clase_nombre', 'modelo_nombre', 'marca_nombre'])  # Eliminar nulos en las 3 columnas
         .assign(
-            clase_nombre=lambda x: x['clase_nombre'].str.strip().str.upper(),
-            modelo_nombre=lambda x: x['modelo_nombre'].str.strip().str.upper(),
-            marca_nombre=lambda x: x['marca_nombre'].str.strip().str.upper(),
+            clase_nombre=lambda x: x['clase_nombre'].apply(clean_text_extreme),
+            modelo_nombre=lambda x: x['modelo_nombre'].apply(clean_text_extreme),
+            marca_nombre=lambda x: x['marca_nombre'].apply(clean_text_extreme)
         )
-        .sort_values(by=['clase_nombre', 'modelo_nombre', 'marca_nombre'])  # Ordenar por las 3 columnas
+        .replace({
+            'clase_nombre': {v: 'POR RELACIONAR' for v in unwanted_values},
+            'modelo_nombre': {v: 'POR RELACIONAR' for v in unwanted_values},
+            'marca_nombre': {v: 'POR RELACIONAR' for v in unwanted_values}
+        })
+        .dropna(subset=['clase_nombre', 'modelo_nombre', 'marca_nombre'])
+        .drop_duplicates(subset=['clase_nombre', 'modelo_nombre', 'marca_nombre'])
+        .sort_values(by=['clase_nombre', 'modelo_nombre', 'marca_nombre'])
+        .rename(columns={
+            'clase_nombre': 'Clase',
+            'modelo_nombre': 'Modelo',
+            'marca_nombre': 'Marca'
+        })
     )
-    modelos_df = modelos_df.rename(columns={
-        'clase_nombre': 'Clase',
-        'modelo_nombre': 'Modelo',
-        'marca_nombre': 'Marca'
-    })
-
-    # Depuración de repuestos codificados con generación de Código Repuesto
+    
+    # Depuración EXTREMA de Repuestos Codificados
     repuestos_codificados_df = (
         df[['clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre']]
-        .drop_duplicates()  # Eliminar duplicados
-        .dropna()  # Eliminar valores nulos
         .assign(
-            clase_nombre=lambda x: x['clase_nombre'].str.strip().str.upper(),
-            modelo_nombre=lambda x: x['modelo_nombre'].str.strip().str.upper(),
-            marca_nombre=lambda x: x['marca_nombre'].str.strip().str.upper(),
-            Repuesto_Nombre=lambda x: x['Repuesto_Nombre'].str.strip().str.upper(),
+            clase_nombre=lambda x: x['clase_nombre'].apply(clean_text_extreme),
+            modelo_nombre=lambda x: x['modelo_nombre'].apply(clean_text_extreme),
+            marca_nombre=lambda x: x['marca_nombre'].apply(clean_text_extreme),
+            Repuesto_Nombre=lambda x: x['Repuesto_Nombre'].apply(clean_text_extreme)
         )
-        .sort_values(by=['clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre'])  # Ordenar alfabéticamente
+        .replace({
+            'clase_nombre': {v: 'POR RELACIONAR' for v in unwanted_values},
+            'modelo_nombre': {v: 'POR RELACIONAR' for v in unwanted_values},
+            'marca_nombre': {v: 'POR RELACIONAR' for v in unwanted_values},
+            'Repuesto_Nombre': {v: 'POR RELACIONAR' for v in unwanted_values}
+        })
+        .dropna()
+        .drop_duplicates(subset=['clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre'])
+        .sort_values(by=['clase_nombre', 'modelo_nombre', 'marca_nombre', 'Repuesto_Nombre'])
+        .rename(columns={
+            'clase_nombre': 'Clase',
+            'modelo_nombre': 'Modelo',
+            'marca_nombre': 'Marca',
+            'Repuesto_Nombre': 'Repuesto'
+        })
     )
-    repuestos_codificados_df = repuestos_codificados_df.rename(columns={
-        'clase_nombre': 'Clase',
-        'modelo_nombre': 'Modelo',
-        'marca_nombre': 'Marca',
-        'Repuesto_Nombre': 'Repuesto'
-    })
 
     # Crear la nueva hoja Repuestos_Instalados_SURA_2024
     repuestos_sura_df = (
@@ -357,14 +392,11 @@ try:
     )
 
     # Generar Código Repuesto con prefijo "S-"
-    repuestos_sura_df = repuestos_sura_df.assign(
-        Código_Repuesto=lambda x: (
-            "S-" +  # Prefijo fijo "S-"
-            x['clase_nombre'].str[0].fillna('X') +  # Inicial de Clase
-            x['modelo_nombre'].str[0].fillna('X') +  # Inicial de Modelo
-            x['marca_nombre'].str[0].fillna('X') +  # Inicial de Marca
-            (x.reset_index().index + 1).astype(str).str.zfill(5)  # Índice consecutivo con 5 dígitos
-        )
+    repuestos_codificados_df['Código Repuesto'] = (
+        repuestos_codificados_df['Clase'].str[0].fillna('X') +
+        repuestos_codificados_df['Modelo'].str[0].fillna('X') +
+        repuestos_codificados_df['Marca'].str[0].fillna('X') +
+        (repuestos_codificados_df.reset_index().index + 1).astype(str).str.zfill(5)
     )
 
     # Renombrar las columnas para que coincidan con los nombres requeridos
@@ -466,12 +498,12 @@ try:
     })
 
 
-    # Generar Código Repuesto
+    # 🔥 Generar código después de eliminar duplicados
     repuestos_codificados_df['Código Repuesto'] = (
-        repuestos_codificados_df['Clase'].str[0].fillna('X') +  # Inicial de Clase
-        repuestos_codificados_df['Modelo'].str[0].fillna('X') +  # Inicial de Modelo
-        repuestos_codificados_df['Marca'].str[0].fillna('X') +  # Inicial de Marca
-        (repuestos_codificados_df.reset_index().index + 1).astype(str).str.zfill(5)  # Índice como número consecutivo con 5 dígitos
+        repuestos_codificados_df['Clase'].str[0].fillna('X') +
+        repuestos_codificados_df['Modelo'].str[0].fillna('X') +
+        repuestos_codificados_df['Marca'].str[0].fillna('X') +
+        (repuestos_codificados_df.reset_index().index + 1).astype(str).str.zfill(5)
     )
 
     # Exportar a Excel
@@ -491,9 +523,48 @@ try:
         repuestos_sura_df.to_excel(writer, sheet_name='InstaladosSURA2024', index=False)  # Cambiar nombre
         # Exportar la nueva hoja Repuestos_Instalados_Inactivos_SURA_2024
         repuestos_inactivos_sura_df.to_excel(writer, sheet_name='InactivosSURA2024', index=False)  # Cambiar nombre
-        #Exportar la nueva hoja RepDesactivarSURA
+        # Exportar la nueva hoja RepDesactivarSURA
         rep_desactivar_sura_df.to_excel(writer, sheet_name='RepDesactivarSURA', index=False)  # Nueva hoja agregada
 
+        # Aplicar formato condicional: pintar en rojo las celdas que contengan "POR RELACIONAR"
+        workbook = writer.book
+        # Define fills con colores más suaves:
+        red_fill = PatternFill(start_color="FFFFC7CE", end_color="FFFFC7CE", fill_type="solid")      # Rojo suave
+        yellow_fill = PatternFill(start_color="FFFFEB9C", end_color="FFFFEB9C", fill_type="solid")   # Amarillo suave
+
+        # 1. Pintar en rojo las celdas que contengan "POR RELACIONAR"
+        for sheet_name in ['Clases', 'Marcas', 'Modelos', 'RepuestosCodif']:
+            ws = writer.sheets[sheet_name]
+            # Se asume que la fila 1 son encabezados
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                for cell in row:
+                    if cell.value == "POR RELACIONAR":
+                        cell.fill = red_fill
+        # 2. Para cada hoja, por cada columna, detectar valores con similitud entre 80% y menos del 100%
+        # utilizando rapidfuzz sobre el conjunto de valores únicos de la columna.
+        for sheet_name in ['Clases', 'Marcas', 'Modelos', 'RepuestosCodif']:
+            ws = writer.sheets[sheet_name]
+            # Iterar por columnas
+            for col in ws.iter_cols(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                # Extraer los valores únicos de la columna (ignorando None y "POR RELACIONAR")
+                unique_values = {cell.value for cell in col if cell.value and cell.value != "POR RELACIONAR"}
+                yellow_values = set()
+                unique_values = list(unique_values)
+                # Comparar cada par de valores únicos
+                for i in range(len(unique_values)):
+                    for j in range(i + 1, len(unique_values)):
+                        ratio = fuzz.ratio(unique_values[i], unique_values[j]) / 100.0
+                        # Si la similitud es entre 80% y menos del 100%, se marcan ambos
+                        if 0.8 <= ratio < 1.0:
+                            yellow_values.add(unique_values[i])
+                            yellow_values.add(unique_values[j])
+                # Ahora, para cada celda de la columna, si su valor está en yellow_values, se pinta de amarillo
+                for cell in col:
+                    if cell.value in yellow_values:
+                        # Si ya no tiene fill (por ejemplo, si no es "POR RELACIONAR") se aplica el amarillo.
+                        # En caso de conflicto, el rojo (más crítico) prevalecerá.
+                        if cell.fill.start_color.index == "00000000":  # Sin fill asignado (puedes ajustar esta condición)
+                            cell.fill = yellow_fill
 
     print(f"Resultados exportados a {salida_excel}")
 
